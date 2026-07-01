@@ -1,0 +1,9 @@
+{
+  "name": "content-gen-skill",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node-зависимости для content-gen (Playwright для /content-mockup). .mjs=ESM, .js=CommonJS (feedback-server/deck-page).",
+  "dependencies": {
+    "playwright": "1.60.0"
+  }
+}

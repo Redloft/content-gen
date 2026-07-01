@@ -1,0 +1,18 @@
+# secrets — never commit
+.env
+lib/all-secrets.env
+
+# node
+node_modules/
+package-lock.json
+
+# generated output / scratch
+out/
+results/
+*.error.txt
+.DS_Store
+
+# skill runtime artifacts
+.finalize/
+.plan-panel/
+state.json

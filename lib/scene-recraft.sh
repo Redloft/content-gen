@@ -31,8 +31,11 @@ case "$DEVICE" in
   *)       PLACEMENT="an open modern laptop";;
 esac
 
-# Жёсткая инструкция на chroma-green экран — критично для последующего green-детекта.
-PROMPT="${PLACEMENT} in ${CONTEXT}. Photorealistic, cinematic atmospheric light, shallow depth of field, high detail. IMPORTANT: the device screen is a perfectly flat SOLID BRIGHT CHROMA-GREEN rectangle (pure #00FF00), fully visible head-on, no glare, no reflections, no icons, no content — the entire screen is uniform green, clearly readable as a rectangle for compositing."
+# Жёсткая инструкция на chroma-green экран — ПЕРВЫМ предложением (иначе богатая
+# арт-дирекция сцены её перебивает и Recraft разворачивает девайс спиной/гасит экран).
+# Проверено 2026-07-02 на ДНК-референсах: screen-first + «filling 50-70% of the frame»
+# держит экран крупным и чистым даже в насыщенных editorial-сценах.
+PROMPT="CRITICAL: tight close-up composition — the device screen is the hero and fills 75-90% of the frame: a large, perfectly flat SOLID BRIGHT CHROMA-GREEN rectangle (pure #00FF00) facing the camera almost straight-on with only a slight angle, all four corners visible inside the frame, sharp straight edges, no glare, no reflections, no icons, no content, the entire screen uniform green. The environment is visible only at the edges of the frame around the screen. ${PLACEMENT} in ${CONTEXT}. Photorealistic editorial photograph, cinematic atmospheric directional light, rich material textures, high detail."
 
 REQ=$(jq -n --arg p "$PROMPT" --arg s "$STYLE" --arg z "$SIZE" \
   '{prompt:$p, style:$s, size:$z, n:1}')

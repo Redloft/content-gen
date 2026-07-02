@@ -4,6 +4,8 @@
   "private": true,
   "description": "Node-зависимости для content-gen (Playwright для /content-mockup). .mjs=ESM, .js=CommonJS (feedback-server/deck-page).",
   "dependencies": {
-    "playwright": "1.60.0"
+    "ag-psd": "^31.0.1",
+    "playwright": "1.60.0",
+    "pngjs": "^7.0.0"
   }
 }

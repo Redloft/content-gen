@@ -56,6 +56,8 @@ allowed-tools:
 
 **Workflow**: пользователь обычно начинает с `explore`, видит что получается, докручивает промпт → `mid` → если ещё не то → `premium`.
 
+> **fal.ai — доп. провайдер (⚠️ DORMANT, не подключён к tier'ам).** Ключ `FAL_KEY` заведён в 1Password (`AI-Tokens/FAL_KEY`, scope-global), даёт 100+ моделей (Flux целиком, Seedream, Qwen, видео Kling/Sora) через `POST https://fal.run/<model>`, auth `Authorization: Key $FAL_KEY`. **Не использовать: баланс аккаунта = 0** (fal → 403 "Exhausted balance"). Включать в tier-систему только после пополнения баланса (fal.ai/dashboard/billing). Вызов — через `op run --env-file=<(echo 'FAL_KEY=op://AI-Tokens/FAL_KEY/credential') -- ...`.
+
 ## Команды
 
 ### `/content-gen <prompt>` (auto)
@@ -69,7 +71,7 @@ allowed-tools:
 **Smart-brief режим**: я задаю 3-5 вопросов, собираю enriched промпт, потом генерирую.
 
 Шаги:
-1. **Прочитай контекст**: (опционально) если ведёшь базу проектов — подтяни `brand_colors`, `style`, `domain_primary` из карточки проекта для консистентного визуала
+1. **Прочитай контекст**: если в чате упоминается проект из `$CLAUDECORE_PATH/projects/` — подтяни `brand_colors`, `style`, `domain_primary` из его frontmatter
 2. **Прочитай** `lib/prompt-engineering.md` — справочник правил
 3. **Спроси через AskUserQuestion** (выбирай 3-5 параметров наиболее релевантных, не больше):
    - Subject — что главное на картинке
@@ -119,7 +121,7 @@ allowed-tools:
 
 ### `/content-mockup <url>` — красивые мокапы сайта/приложения
 
-Из URL делает пачку мокапов: **ветка A** (скриншот в рамке браузера/iPhone/iPad/MacBook) и **ветка C** (устройство в тематическом контексте — ноут в бане, телефон в руке в spa). Скриншот вставляется **детерминированно** (green-screen composite), поэтому экран всегда пиксель-в-пиксель, без генеративных искажений. desktop **и** mobile — обязательно.
+Из URL делает пачку мокапов: **ветка A** (скриншот в рамке браузера/iPhone/iPad/MacBook), **ветка C** (устройство в тематическом контексте — ноут в бане, телефон в руке в spa) и **ветка D** (профессиональные PSD-сцены через Dynamic Mockups API — премиум editorial-качество, см. ниже). Скриншот вставляется **детерминированно** (green-screen composite в A/C; smart-object warp в D), поэтому экран всегда пиксель-в-пиксель, без генеративных искажений. desktop **и** mobile — обязательно.
 
 **Движок один на обе ветки**: сгенерить/нарисовать поверхность с chroma-green экраном → `frame-composite.py --mode green` вставляет реальный скриншот. Ветка A — `frames.py` (PIL-устройство, офлайн). Ветка C — `scene-recraft.sh` (Recraft-сцена, в `op run`).
 
@@ -161,10 +163,56 @@ allowed-tools:
 #### Первый запуск
 Нужен Playwright chromium (~110MB): ставится один раз `cd ~/.claude/skills/content-gen && npx playwright install chromium`. `run-mockup.sh capture` понятно ругнётся, если браузера нет.
 
+#### Ветка D — PSD-мокапы через Dynamic Mockups API
+
+Потолок качества веток A/C — плоская вклейка. Ветка D рендерит скриншот в **профессиональный PSD со smart object** (перспектива, блики, свет сцены) через [Dynamic Mockups](https://app.dynamicmockups.com). Доступ: MCP `dynamic-mockups` (user-scope) / REST; ключ в 1Password `AI-Tokens/Dynamic Mockups API`.
+
+**Протокол:**
+1. Скриншот → публичный URL (Cloudinary через `lib/upload-cloudinary.sh`, или litterbox 24h для разовых тестов).
+2. Свой PSD: распаковать из zip → залить PSD на публичный URL → `upload_psd` (нужен **прямой** URL на `.psd`, не превью-страница) с `mockup_template.create_after_upload: true`. Шаблон возвращает `smart_objects[].uuid`.
+3. `create_render` (mockup_uuid + smart object uuid + `asset.url`, `fit: "cover"` для экранов) → `export_path` (S3, живёт 24ч) → скачать локально сразу.
+4. Много картинок за раз — `create_batch_render` (те же кредиты, один вызов).
+
+**Библиотека PSD:** рефы стиля — `$CLAUDECORE_PATH/mockup/`; выбранные PSD хранить в `$CLAUDECORE_PATH/mockup/psd/` (источники и лицензии — в `SOURCES.md` рядом). Загруженный в Dynamic Mockups шаблон постоянный — повторный рендер любого сайта = 1 кредит, без ре-аплоада.
+
+**Грабли (проверено 2026-07-02):**
+- **MockAnything (AI-ветка API) НЕ детектит экраны устройств** — его детектор print-area заточен под POD (футболки/кружки). И prompt-, и image_url-flow возвращают пустой `smart_objects` для ноутбуков. Для сайтов — только classic PSD upload.
+- **PSD от mockups-design.com содержат слой-заглушку «DELETE THIS LAYER»** поверх сцены — рендер даёт заглушку вместо мокапа. Чистить в Photoshop перед загрузкой. У GraphicBurger/Unblast заглушек нет — рендер сразу чистый.
+- **Free tier: 50 кредитов, рендеры с водяным знаком** «Dynamic Mockups». Pro ($19/мес) снимает watermark и нужен для прода; для оценки качества free хватает.
+- `upload_psd` через MCP на больших PSD (>70MB) иногда отдаёт timeout — **сначала `get_mockups`** (загрузка могла пройти на сервере), только потом ретрай, иначе дубликат шаблона.
+- Скачивание free-PSD с download-monitor-сайтов (mockups-design и пр.): страница отдаёт meta-refresh с nonce — `lib/dlm-download.sh <download_url> <referer> <out>` (двухшаговый curl с cookie-jar) решает.
+
+**Когда какая ветка:** D — готовые чужие PSD из библиотеки через Dynamic Mockups (их движок честно рендерит чужую слоёную начинку). **D2 (основной путь для своих сцен, см. ниже)** — полностью локально. C (хромакей, legacy) — движок сцен для D2. A — быстрые чистые рамки.
+
+#### Ветка D2 — self-made сцены с PSD-качеством (основной путь, полностью локально)
+
+Дуэль 2026-07-02 (одна сцена, один скриншот): локальный композит **лучше** Dynamic Mockups на своих сценах — перспектива та же (гомография), а перенос света у DM отсутствует (glare-слои PSD он сам не придумывает). Бесплатно, без watermark. DM нужен только для чужих готовых PSD.
+
+**Протокол D2** (все скрипты в `lib/`, python = `~/.claude/parsing-venv` с numpy+Pillow):
+1. **Сцена**: Recraft-промт как в ветке C, но (а) «screen fills 85-90% of the frame», (б) **разрешить** «a soft diagonal band of window light falls across the green screen as a subtle reflection» — Recraft запекает блики В зелёный, перенос света их заберёт; (в) лимит промта 1000 символов.
+
+**СПЕЦ ТЕЛЕФОНА (обязательно, жёстко — Игорь 2026-07-02):** для телефонных сцен —
+   - **Дисплей крупный — 60–70% кадра**, это ключевое. Промт: «screen is HUGE, fills 70-80% of the whole frame, almost straight-on». Плюс `--crop-screen=0.68` в composite добивает точный процент авто-кропом (по построению, не на удачу генератора). ✅ работает.
+   - **«Последний iPhone» — НЕ дорисовывать Dynamic Island** (флаг `--di` есть, но НЕ использовать): Recraft упорно даёт чёлочный корпус, дорисованный островок ложится ПОВЕРХ остатка чёлки — два элемента, выглядит плохо (проверено, Игорь забраковал). Если нужен честный современный iPhone — брать готовый бесчёлочный **PSD ветки D** (Dynamic Mockups), а не выбивать из Recraft.
+   - Вызов: `selfmade-composite.py <scene> <shot> <out> <junk-mask> --crop-screen=0.68` (без `--di`).
+   - **Брендинг — НЕ тату** (выглядит чужеродно, забраковано): `brand-corner.py <img> <wordmark.svg> <out> br 0.20 0.55` ставит деликатный знак РЕДЛОФТ/RedLoft в угол (замена watermark, как «mockupbureau.com» в рефах). `tattoo.py` оставлен в lib на случай уместной сцены, но по умолчанию не применять.
+2. **Чистка** `clean-scene.py <scene> <clean> <junk-mask>`: мусор-иконки на зелёном → junk-маска (НЕ инпейнт сцены — их накроет вставка, важна только карта света); кривой текст бейджа (Recraft врёт в точных надписях!) → штрихи стираются median-inpaint вдоль наклонного нижнего ребра, поверх рисуется точный «RedLoft» (Helvetica, угол ребра). Брендинг = всегда пост-композит, не промт.
+3. **Аспект-скриншот** `shot-aspect.mjs <url> <aspect> <out>`: аспект квада (`quad_true_size`) → Playwright-скриншот ровно под него → сайт влезает целиком by construction, никаких кропов.
+4. **Композит** `selfmade-composite.py <clean-scene> <shot> <out> [junk-mask]`: гистерезисная детекция квада (строгий seed → реконструкция в мягкую маску g>r+18 — затенённые части экрана не теряются) → 4× суперсэмпл маска (AA-кромка) → despill в зоне ~±28px (глобальный ЖРЁТ легитимную зелёную ткань) → перспектива → **перенос света** (luma/blurred-ref: multiply тени + screen блики + specular вуаль) → ring-kill остаточного хрома у кромок.
+
+Грабли D2: Recraft путает точный текст даже с посимвольным спеллингом («Real LoFs», «Reiloft») — не бороться промтом; junk-иконки на экране — почти в каждой генерации; экраны Recraft слегка выпуклые (bleed 4 + ring-kill обязательны); чёрная точка экрана поднята через `BLACK_FLOOR=14` в composite (живой дисплей ≠ RGB0; тюнить там же). Детекция квада печатает `quad_fit_quality` (edge_fit|extreme_point_fallback|strict_fallback) + stderr-флаг `degraded:true` при деградации — батч-оркестратор ловит подозрительные кадры.
+
+**Безопасность ассетов:** `svg_p` в `tattoo.py`/`brand-corner.py` (и логотип в composite-брендинге) — ВСЕГДА доверенный локальный ассет (`$CLAUDECORE_PATH/.../logo/*.svg`). НЕ подавать сюда user-supplied SVG без санитайза: cairosvg рендерит внешние `<image href>`/`url()` → потенциальный SSRF/file-read.
+
+**Регресс-фикстура (единственная страховка без гейтов):** держать 1 эталон (сцена + ожидаемые 4 угла ±5px) — при бампе Pillow/numpy знак SVD / поведение MaxFilter могут молча сдвинуть quad-fit. TODO: закрепить ref51 как фикстуру.
+
+**Сборка своего PSD** (если нужен файл для DM/клиента): `build-psd.js <scene> <shot> <out.psd> <quad8>` (ag-psd; id placedLayer = GUID обязателен; pngjs требует чистые PNG — sips-овские прогонять через PIL; transform+nonAffineTransform = квад). DM принимает и рендерит такой PSD (проверено).
+
 #### Известные ограничения v1
 - Ветка A (чистый green) — идеальный композит. Ветка C — редкий тонкий зелёный кант на **скруглённых/наклонных** экранах (despill глушит основное); для чистоты предпочитать плоские экраны (ноут) наклонным телефонам.
 - Ветка B (лого на носителях: билборды/мерч) — **не в v1** (бэклог).
 - A и C — **независимые серии** картинок (рамка ИЛИ контекст), не комбинируются на одном изображении.
+- Ветка D: free tier = watermark; свои PSD должны иметь smart object (`MISSING_SMART_OBJECTS` иначе); библиотека PSD пока в стадии отбора.
 
 ## Архитектура (что под капотом)
 

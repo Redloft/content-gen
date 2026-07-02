@@ -113,18 +113,31 @@ def quad_bbox_size(quad):
     return int(max(xs) - min(xs)), int(max(ys) - min(ys))
 
 
+def quad_true_size(quad):
+    """Реальный аспект наклонного экрана: средние длины противоположных сторон
+    (bbox на угловых ракурсах врёт → скриншот растягивается)."""
+    (tlx, tly), (trx, try_), (brx, bry), (blx, bly) = quad
+    top    = ((trx - tlx) ** 2 + (try_ - tly) ** 2) ** 0.5
+    bottom = ((brx - blx) ** 2 + (bry - bly) ** 2) ** 0.5
+    left   = ((blx - tlx) ** 2 + (bly - tly) ** 2) ** 0.5
+    right  = ((brx - trx) ** 2 + (bry - try_) ** 2) ** 0.5
+    return max(1, int((top + bottom) / 2)), max(1, int((left + right) / 2))
+
+
 def fit_shot(shot, target_w, target_h, mode):
-    """cover: заполнить целевой bbox с обрезкой; contain: вписать целиком."""
+    """cover: заполнить целевой bbox с обрезкой; contain: вписать целиком.
+    Гравитация обрезки — левый верхний угол: лого/заголовок/навигация сайта живут
+    там, центр-кроп срезал начало заголовка («…ДКА НА РАЗОВОЕ»)."""
     sw, sh = shot.size
     if target_w <= 0 or target_h <= 0:
         die("target screen has non-positive size", code=5)
     ar_t = target_w / target_h
     ar_s = sw / sh
     if mode == "cover":
-        if ar_s > ar_t:  # шире цели → режем по ширине
-            nw = int(sh * ar_t); shot = shot.crop(((sw - nw) // 2, 0, (sw - nw) // 2 + nw, sh))
-        else:
-            nh = int(sw / ar_t); shot = shot.crop((0, (sh - nh) // 2, sw, (sh - nh) // 2 + nh))
+        if ar_s > ar_t:  # шире цели → режем по ширине, держим ЛЕВЫЙ край
+            nw = int(sh * ar_t); shot = shot.crop((0, 0, nw, sh))
+        else:            # выше цели → режем по высоте, держим ВЕРХ (nav + hero)
+            nh = int(sw / ar_t); shot = shot.crop((0, 0, sw, nh))
     return shot
 
 
@@ -170,7 +183,7 @@ def main():
             exp.append((x + dx / ln * a.bleed, y + dy / ln * a.bleed))
         quad = exp
 
-    tw, th = quad_bbox_size(quad)
+    tw, th = quad_true_size(quad) if a.mode == "green" else quad_bbox_size(quad)
     shot = fit_shot(shot, tw, th, a.fit)
     w, h = shot.size
     src = [(0, 0), (w, 0), (w, h), (0, h)]
@@ -208,6 +221,28 @@ def main():
         g_fixed = ImageChops.darker(g2, cap)         # min(g, max(r,b))
         g_new = Image.composite(g_fixed, g2, gmask)
         out = Image.merge("RGB", (r2, g_new, b2))
+
+        # глобальный despill: хромакей-ОТРАЖЕНИЯ на сцене (камень, стол, клавиатура)
+        # вне экрана. Порог = как у детектора (жёстче внутреннего) — живая зелень
+        # (листва/mox, мутнее и желтее) по дизайну детектора его не пробивает.
+        r3, g3, b3 = out.split()
+        # низкие пороги + требование R≈B (цветовая «чистота» хромакея): тёмный отсвет
+        # на клавиатуре (~22,53,27) ловится, живая зелень (R>B, желтее) — нет.
+        purity = ImageChops.difference(r3, b3).point(lambda v: 255 if v < 25 else 0)
+        spill = ImageChops.multiply(
+            ImageChops.subtract(g3, r3).point(lambda v: 255 if v > 22 else 0),
+            ImageChops.subtract(g3, b3).point(lambda v: 255 if v > 22 else 0))
+        spill = ImageChops.multiply(spill, purity)
+        spill = ImageChops.multiply(spill, g3.point(lambda v: 255 if v > 40 else 0))
+        spill = ImageChops.multiply(spill, ImageChops.invert(bbox_poly))  # только вне экрана
+        # отсвет разрежен (зазоры клавиш) — без дилатации blur съедает маску до ~20% альфы
+        spill = spill.filter(ImageFilter.MaxFilter(7))
+        spill = spill.filter(ImageFilter.GaussianBlur(2))                 # мягкий переход
+        cap3 = ImageChops.lighter(r3, b3)
+        # полное глушение: g -> max(r,b) — отсвет теряет цвет, сохраняя форму бликов
+        g_soft = ImageChops.darker(g3, cap3)
+        g_out = Image.composite(g_soft, g3, spill)
+        out = Image.merge("RGB", (r3, g_out, b3))
 
     try:
         out.save(a.out)

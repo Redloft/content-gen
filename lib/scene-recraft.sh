@@ -5,9 +5,14 @@
 #
 # Использует $RECRAFT_API_KEY из ОКРУЖЕНИЯ (оркестратор оборачивает в один op run).
 #
+# NB: в отличие от sibling'ов scene-gemini.sh/scene-openai.sh (retry 3× с backoff на
+# 429/5xx), здесь API-ретрая на генерацию НЕТ — только один ретрай на СКАЧИВАНИЕ по URL.
+# Recraft — fallback-провайдер D2 (не дефолт), стабилен на практике; при переводе его в
+# основной путь портировать retry-loop из scene-gemini.sh для консистентности.
+#
 # Usage:
 #   scene-recraft.sh --context "<сцена по-английски>" --device laptop|phone|tablet \
-#       --out scene.png [--size 1365x1024] [--style realistic_image]
+#       --out scene.png [--size 1365x1024] [--style realistic_image] [--prompt "<raw>"]
 # stdout: JSON {ok, out} | {ok:false, error}
 set -euo pipefail
 

@@ -1,0 +1,36 @@
+{
+  "_comment": "capability-matrix /content-screencast: что каждый tier умеет (данные, не if-else). SCREENCAST-SPEC.md §2/§7.1/§9-шаг-0",
+  "formats": {
+    "mobile-scroll":  { "tiers": ["explore", "mid", "premium"], "default_device": "iphone",  "viewport": "mobile",  "aspects": ["9:16", "1:1"] },
+    "desktop-scroll": { "tiers": ["explore", "mid", "premium"], "default_device": "browser", "viewport": "desktop", "aspects": ["16:9"] },
+    "clicks":         { "tiers": ["explore", "premium"],        "default_device": "browser", "viewport": "desktop", "aspects": ["16:9"], "requires": "scenario" },
+    "loop":           { "tiers": ["explore", "mid", "premium"], "default_device": "iphone",  "viewport": "mobile",  "aspects": ["1:1"], "derivative": true }
+  },
+  "devices": {
+    "iphone":  { "frame_device": "iphone",  "viewport": "mobile" },
+    "browser": { "frame_device": "browser", "viewport": "desktop" },
+    "macbook": { "frame_device": "macbook", "viewport": "desktop" },
+    "ipad":    { "frame_device": "ipad",    "viewport": "tablet" }
+  },
+  "tiers": {
+    "explore": { "engine": "record",    "implemented": true  },
+    "mid":     { "engine": "pan",       "implemented": true  },
+    "premium": { "engine": "dm|remotion", "implemented": false, "cost_gate": true }
+  },
+  "viewports": {
+    "_comment": "единый источник геометрии (finalize warn #5): держать в синке с VIEWPORTS в lib/capture.mjs",
+    "desktop": { "h": 900,  "dsf": 2 },
+    "tablet":  { "h": 1112, "dsf": 2 },
+    "mobile":  { "h": 844,  "dsf": 3 }
+  },
+  "limits": {
+    "duration_min_s": 3,
+    "duration_max_s": 60,
+    "speed_min_px_s": 100,
+    "speed_max_px_s": 3000,
+    "speed_default_px_s": 800,
+    "fullpage_height_cap_px": 20000,
+    "ffmpeg_timeout_s": 120,
+    "goto_timeout_ms": 15000
+  }
+}

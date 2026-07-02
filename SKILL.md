@@ -27,6 +27,12 @@ description: |
   • "make mockups of site X", "put the site in an iphone/macbook frame", "device mockups from url"
   • Explicit: «/content-mockup»
 
+  SCREENCAST (ветка `/content-screencast` — ВИДЕО-мокапы сайта из URL, гладкий скролл 60fps):
+  • «сделай видео сайта», «видосик как сайт скроллится», «скринкаст сайта», «видео-мокап»
+  • «покажи сайт в движении», «ролик с сайтом в айфоне», «scroll-видео для соцсетей/hero»
+  • "screencast of the site", "scrolling video of site X", "video mockup", "site scroll video"
+  • Explicit: «/content-screencast»
+
   TIER hints из контекста пользователя:
   • «пристрелочный», «попробуй», «прикинь», «быстрый», "quick test", "let's see" → --tier explore
   • просто generate без указаний → --tier mid (default)
@@ -188,8 +194,20 @@ allowed-tools:
 
 Дуэль 2026-07-02 (одна сцена, один скриншот): локальный композит **лучше** Dynamic Mockups на своих сценах — перспектива та же (гомография), а перенос света у DM отсутствует (glare-слои PSD он сам не придумывает). Бесплатно, без watermark. DM нужен только для чужих готовых PSD.
 
+**Матрица генераторов сцены D2 (дуэль 2026-07-02, termoport, идентичные промты, все edge_fit):**
+
+| Генератор | Скрипт | Роль | Цена/сцена | Факты дуэли |
+|---|---|---|---|---|
+| **NB Pro `gemini-3-pro-image`** | `lib/scene-gemini.sh` | **ДЕФОЛТ** | ~$0.13 (2K) | Единственный слушается «screen 70–90%» и даёт бесчёлочный iPhone; **точный текст бейджей** (TERMOPORT посимвольно — снимает боль clean-scene.py); богатая полоса света; editorial-реализм уровня рефов |
+| Recraft v3 | `lib/scene-recraft.sh` | fallback, массовые дешёвые | ~$0.04 | Экран мельче запрошенного (50–60%), мусор-точки на зелёном, врёт текст, чёлочный iPhone |
+| gpt-image-1.5 | `lib/scene-openai.sh` | fallback #2 | ~$0.07–0.25 | Чистый осевой квад, но композиция плоская/фронтальная; на телефоне рисует punch-hole НА зелёном → окклюзия-артефакт на вклейке (добавлять «no camera hole on the screen») |
+
+Fallback-порядок: NB Pro → Recraft → gpt-image-1.5. Все три скрипта принимают `--prompt` (raw override) для дуэлей/кастома; контракт `{ok,out}` одинаковый; retry/backoff встроен в новые.
+
+**1b «сцена вокруг якоря» (image-edit по green-якорю) — ОТКЛОНЁН (2026-07-02):** гипотеза «квад точный by construction» опровергнута — обе модели пересобирают холст (NB Pro сдвинул/наклонил якорь, gpt-image-1.5 уменьшил), преимущества перед обычной генерацией нет. Если когда-то возвращаться к image-edit путям: **PII pre-flight assert обязателен** — якорь только синтетика с green-квадом (≥8% чистого зелёного, 0% контента внутри bbox), НИКОГДА не запечённый скриншот (уйдёт в 3rd-party).
+
 **Протокол D2** (все скрипты в `lib/`, python = `~/.claude/parsing-venv` с numpy+Pillow):
-1. **Сцена**: Recraft-промт как в ветке C, но (а) «screen fills 85-90% of the frame», (б) **разрешить** «a soft diagonal band of window light falls across the green screen as a subtle reflection» — Recraft запекает блики В зелёный, перенос света их заберёт; (в) лимит промта 1000 символов.
+1. **Сцена**: дефолт — `scene-gemini.sh` (NB Pro, матрица выше); промт как в ветке C, но (а) «screen fills 85-90% of the frame», (б) **разрешить** «a soft diagonal band of window light falls across the green screen as a subtle reflection» — генератор запекает блики В зелёный, перенос света их заберёт; (в) лимит промта 1000 символов; (г) точный бренд-текст в сцене МОЖНО просить у NB Pro (посимвольный спеллинг в промте + визуальная сверка), для Recraft — по-прежнему только пост-композит.
 
 **СПЕЦ ТЕЛЕФОНА (обязательно, жёстко — Игорь 2026-07-02):** для телефонных сцен —
    - **Дисплей крупный — 60–70% кадра**, это ключевое. Промт: «screen is HUGE, fills 70-80% of the whole frame, almost straight-on». Плюс `--crop-screen=0.68` в composite добивает точный процент авто-кропом (по построению, не на удачу генератора). ✅ работает.
@@ -243,7 +261,9 @@ allowed-tools:
     ├── slots-from-page.mjs         ← slot-манифест из репо-шаблона (+fallback при 0 слотах)
     ├── frames.py                   ← PIL-устройства с green-экраном (ветка A): browser/iphone/ipad/macbook
     ├── frame-composite.py          ← green-детект (largest connected comp) + perspective-вставка + despill
-    ├── scene-recraft.sh            ← Recraft-сцена с green-экраном (ветка C), $RECRAFT_API_KEY из env
+    ├── scene-recraft.sh            ← Recraft-сцена с green-экраном (ветка C/D2), $RECRAFT_API_KEY из env
+    ├── scene-gemini.sh             ← NB Pro-сцена (gemini-3-pro-image) — ДЕФОЛТ сцен D2, $GEMINI_API_KEY
+    ├── scene-openai.sh             ← gpt-image-1.5-сцена — fallback D2, $OPENAI_API_KEY
     ├── feedback-server.js          ← эфемерный localhost-приёмник ответов тиндера (вендор из redreference)
     └── deck-page.js                ← HTML-тиндер колоды мокапов (👍/👎/оценка/коммент → POST серверу)
 ```
@@ -275,6 +295,33 @@ allowed-tools:
 | тиндер (`feedback-server`+`deck-page`) | сервер стартует (bind 127.0.0.1, bearer-token), POST раунда → `round-N.answers.json`; неверный токен → 401. |
 | `run-mockup.sh produce` | N мокапов **ровно под размеры слотов** (desktop+mobile); частичный сбой слота → `failed++`, не падение всего прогона. |
 | Фича в целом | `/content-mockup <public-url>` проходит capture→explore→produce без ручного вмешательства кроме тиндер-выбора; partial-fail помечается, не блокирует. |
+
+### `/content-screencast <url>` — видео-мокапы сайта (motion-сиблинг /content-mockup)
+
+Из URL делает **видео-ролики** сайта в рамке девайса: гладкий скролл 60fps, desktop+mobile.
+Полная спека и контракты — [`SCREENCAST-SPEC.md`](SCREENCAST-SPEC.md) (v3, прошла 2 раунда plan-panel).
+
+**Главный трюк (Tier 2 = default):** НЕ записывать реальный скролл (он дёргается), а взять
+один full-page скриншот и панорамировать по нему ffmpeg'ом со smoothstep-easing — скролл
+получается идеально гладким, пайплайн офлайн и бесплатный.
+
+**Запуск:**
+```bash
+./run-screencast.sh run --url <url> --out <dir> --formats mobile-scroll,desktop-scroll --tier mid
+# стадии по отдельности: validate | capture | polish | frame | deck (+resume из state.json)
+```
+
+- Тиры: `mid` (T2 pan, default) и `explore` (T1 recordVideo — реальная запись + `clicks`-сценарии) — **реализованы**; `premium` (T3) — обвязка готова, рендер не обкатан (см. ниже).
+- **T3-DM (premium)**: Dynamic Mockups `create_video` = **генеративное Kling image-to-video** (АI-«оживление» мокапа: камера/свет; UI не пиксель-в-пиксель → для атмосферных промо, не для читаемых скринкастов). ПЛАТНО (v2.6 5s = 40 кредитов). Протокол строго по SPEC §12: `dm-confirm` (после явного y/n с суммой!) → `dm-intent` → MCP `create_video` → `dm-job` → поллинг → `dm-done`. Обрыв: intent без job_id блокирует повтор — проверить DM, потом `dm-clear`/`dm-job`. Session-ledger в `~/Library/Application Support/content-screencast/`.
+- Форматы: `mobile-scroll` (iPhone 9:16), `desktop-scroll` (browser 16:9), `clicks` (T1: `--scenario steps.json` — scroll/hover/click/wait, см. SPEC §5), `loop/gif`.
+- T1: `lib/record.mjs` (easing-скролл через rAF+smoothstep, SSRF route-guard `lib/ssrf-route.mjs` на всю сессию, watchdog 45s, WebM cap 200MB → транскод в mp4, WebM чистится).
+- **Exit-code 0 ≠ success**: каждый шаг верифицируется (ffprobe duration/resolution/stream; capture bytes+размеры). Упавший unit → карточка с причиной в deck.html, остальные доводятся (continue-on-error).
+- state.json (schema v1) в run-папке: resume по unit'ам `(format/device)`, write-ahead intent для платных вызовов.
+- Guards: goto 15s, ffmpeg 120s watchdog, height cap 20000px, `imgH<=viewportH` → статичный 3s loop.
+- Требует **ffmpeg** (`brew install ffmpeg`, сам не ставит). SSRF/PII — как у мокапов.
+- Регрессия сиблинга: `lib/test-mockup-contract.sh` (гонять после правок общих lib-файлов).
+- **Деривативы** (`--derive`/`--loop` или стадия `derive`): gif <10MB (palette, зациклен) + poster png.
+- **Заливка** (`--upload` или стадия `upload`, обкатано live): идемпотентный `public_id=sc-<hash>` + overwrite (resume без дублей), round-trip verify **range-GET** (Cloudinary на HEAD не отдаёт Content-Length!), retry 3×5s. **PII-gate fail-closed**: без `--pii-ok` откажет — сначала спросить пользователя (Cloudinary = 3rd-party). `lib/screencast-upload.sh` — самообёртка `op run --no-masking` (op маскирует cloud_name в secure_url — не убирать флаг).
 
 ## Anti-patterns
 

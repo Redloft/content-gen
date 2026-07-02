@@ -21,17 +21,7 @@
 set -uo pipefail
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
 PY="python3"; NODE="node"
-
-# Secrets: если есть lib/all-secrets.env + 1Password CLI (op) — генерация Recraft-сцен
-# идёт под op run (секрет только в дочернем процессе). Иначе — RECRAFT_API_KEY берётся
-# из окружения напрямую. Скриншоты/рамки/композит секретов не требуют (всегда вне op).
-run_ai(){  # run_ai <cmd...>
-  if [ -f "$LIB/all-secrets.env" ] && command -v op >/dev/null 2>&1; then
-    op run --no-masking=false --env-file="$LIB/all-secrets.env" -- "$@"
-  else
-    "$@"
-  fi
-}
+SECRETS_ENV="op://AI-Tokens/Recraft/credential"
 
 log(){ printf '  %s\n' "$*" >&2; }
 step(){ printf '\n▸ %s\n' "$*" >&2; }
@@ -155,7 +145,7 @@ cmd_explore(){
     # пути передаём через ЭКСПОРТ env (op run пробрасывает окружение) — без хрупкого
     # string-embedding в bash -c; безопасно для путей с пробелами/кириллицей/спецсимволами
     export MK_LIB="$LIB" MK_OUT="$OUT" MK_CTX="$CONTEXTS"
-    run_ai bash -c '
+    op run --no-masking=false --env-file=<(echo "RECRAFT_API_KEY=$SECRETS_ENV") -- bash -c '
       jq -c ".[]" "$MK_CTX" | nl -w1 -s"|" | while IFS="|" read i row; do
         ctxstr=$(echo "$row" | jq -r ".context"); dev=$(echo "$row" | jq -r ".device // \"laptop\"")
         size=$(echo "$row" | jq -r ".size // \"1365x1024\"")
@@ -246,7 +236,8 @@ cmd_produce(){
     local CTX; CTX=$(jq -r '.context // "a clean neutral studio background"' "$ART")
     local sdev; sdev=$(jq -r '.scene_device // "laptop"' "$ART")
     step "Ветка C: генерирую опорную сцену (op run)"
-    run_ai bash "$LIB/scene-recraft.sh" --context "$CTX" --device "$sdev" --out "$OUT/final/_scene.png" >/dev/null 2>>"$OUT/final/scene.err" \
+    op run --no-masking=false --env-file=<(echo "RECRAFT_API_KEY=$SECRETS_ENV") -- \
+      bash "$LIB/scene-recraft.sh" --context "$CTX" --device "$sdev" --out "$OUT/final/_scene.png" >/dev/null 2>>"$OUT/final/scene.err" \
       && SCENE="$OUT/final/_scene.png" || log "✗ сцена не сгенерилась → откат на рамку"
     [ -z "$SCENE" ] && MODE="frame"
   fi

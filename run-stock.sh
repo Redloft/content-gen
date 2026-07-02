@@ -36,11 +36,7 @@ echo
 jq -n --arg q "$QUERY" --arg s "$SOURCES" --arg t "$(date -u +%FT%TZ)" \
   '{mode: "stock", query: $q, sources: $s, started_at: $t}' > "$OUTDIR/meta.json"
 
-SECRETS_WRAP=(bash -c)
-if [ -f "$LIBDIR/all-secrets.env" ] && command -v op >/dev/null 2>&1; then
-  SECRETS_WRAP=(op run --env-file="$LIBDIR/all-secrets.env" -- bash -c)
-fi
-"${SECRETS_WRAP[@]}" "
+op run --env-file="$LIBDIR/all-secrets.env" -- bash -c "
   set -uo pipefail
   IFS=',' read -ra SRC_ARR <<< '$SOURCES'
   PIDS=()

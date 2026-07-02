@@ -89,13 +89,8 @@ echo
 jq -n --arg p "$PROMPT" --arg t "$TIER" --arg s "$SOURCES" --arg ts "$(date -u +%FT%TZ)" --arg style "$RECRAFT_STYLE" \
   '{prompt: $p, tier: $t, sources: $s, started_at: $ts, recraft_style: $style}' > "$OUTDIR/meta.json"
 
-# Secrets: если есть all-secrets.env + 1Password CLI (op) — один op run на всё
-# (одна авторизация). Иначе — обычные env-переменные из окружения (см. README).
-SECRETS_WRAP=(bash -c)
-if [ -f "$LIBDIR/all-secrets.env" ] && command -v op >/dev/null 2>&1; then
-  SECRETS_WRAP=(op run --env-file="$LIBDIR/all-secrets.env" -- bash -c)
-fi
-"${SECRETS_WRAP[@]}" "
+# КЛЮЧЕВОЕ: ОДИН op run на всё параллельное → ОДНА авторизация
+op run --env-file="$LIBDIR/all-secrets.env" -- bash -c "
   set -uo pipefail
   IFS=',' read -ra SRC_ARR <<< '$SOURCES'
   PIDS=()

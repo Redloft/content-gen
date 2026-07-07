@@ -27,6 +27,15 @@ esac; done
 [ -n "$OUT" ] || { echo '{"ok":false,"error":"need --out"}'; exit 1; }
 [ -n "${GEMINI_API_KEY:-}" ] || { echo '{"ok":false,"error":"GEMINI_API_KEY not in env (wrap in op run)"}'; exit 1; }
 
+# Gemini гео-блокирует РФ (прямой → 400). Через openclaw FI (SOCKS, TLS e2e, ключ на сервере не
+# виден, хелпер прогревает туннель). Fail-open: FI недоступен → PROXY пуст → прямой маршрут.
+_GFI=~/.claude/skills/_shared/gemini-fi/fi-proxy.sh
+[ -f "$_GFI" ] && source "$_GFI" && PROXY=$(gemini_fi_proxy) || PROXY=""
+
+# Ключ — в заголовке через curl --config (600), НЕ инлайном -H (тот виден в `ps`/argv). ОДИН раз до retry-loop.
+CFG=$(mktemp); chmod 600 "$CFG"; trap 'rm -f "$CFG"' EXIT
+printf 'header = "x-goog-api-key: %s"\n' "$GEMINI_API_KEY" > "$CFG"
+
 if [ -n "$RAW_PROMPT" ]; then
   PROMPT="$RAW_PROMPT"
 else
@@ -49,9 +58,9 @@ REQ=$(jq -n --arg p "$PROMPT" --arg ar "$ASPECT" --arg sz "$IMGSIZE" \
 ATTEMPT=0; B64=""
 while [ $ATTEMPT -lt 3 ]; do
   ATTEMPT=$((ATTEMPT+1))
-  RESP=$(curl --silent --max-time 240 -X POST \
+  RESP=$(curl --silent --max-time 240 ${PROXY:+--proxy "$PROXY"} --config "$CFG" -X POST \
     "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent" \
-    -H "x-goog-api-key: $GEMINI_API_KEY" -H "Content-Type: application/json" \
+    -H "Content-Type: application/json" \
     -d "$REQ" || echo '')
   B64=$(echo "$RESP" | jq -r '.candidates[0].content.parts[]? | select(.inlineData.data?) | .inlineData.data' 2>/dev/null | head -1)
   [ -n "$B64" ] && [ "$B64" != "null" ] && break
